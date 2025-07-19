@@ -1,7 +1,6 @@
 {
-  "name": "toxic-lover",
+  "name": "toxic-lover-chatbot",
   "version": "1.0.0",
-  "description": "Toxic Lover Facebook Messenger Bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
