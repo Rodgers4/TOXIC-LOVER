@@ -1,120 +1,131 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
-
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
 const app = express();
-const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
-const VERIFY_TOKEN = "rodgers4";
-const OPENAI_API_KEY = "YOUR_OPENAI_API_KEY";
+const PORT = process.env.PORT || 3000;
+
+// Messenger Config
+const PAGE_ACCESS_TOKEN = 'EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD';
+const VERIFY_TOKEN = 'rodgers4';
+const GEMINI_API_KEY = 'AIzaSyCTOyG7rkr0ZnwzuQcYCAW0qgux4fAvWpA';
+
+let greetedUsers = new Set();
 
 app.use(bodyParser.json());
 
-app.get("/", (req, res) => res.send("TOXIC LOVER WEBHOOK ✅"));
-
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
+// ✅ Webhook Verification
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    res.status(200).send(challenge);
   } else {
-    return res.sendStatus(403);
+    res.sendStatus(403);
   }
 });
 
-app.post("/webhook", async (req, res) => {
+// ✅ Messenger Event Handler
+app.post('/webhook', async (req, res) => {
   const body = req.body;
+  if (body.object === 'page') {
+    for (const entry of body.entry) {
+      for (const event of entry.messaging) {
+        const senderId = event.sender.id;
+        const msg = event.message?.text;
 
-  if (body.object === "page") {
-    body.entry.forEach(async (entry) => {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
+        if (msg) {
+          if (!greetedUsers.has(senderId)) {
+            await sendMessage(senderId, "👋 Hello, I'm *Toxic Lover*. How can I help you today? Or type `.menu` to explore my commands.\n\nPOWERED BY RODGERS");
+            greetedUsers.add(senderId);
+          }
 
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const messageText = webhookEvent.message.text.toLowerCase();
+          const lower = msg.toLowerCase();
 
-        if (webhookEvent.message.is_echo) return;
+          // Command Handling
+          if (lower === '.menu') {
+            await sendMessage(senderId,
+`╭──────────⊷
+┋ ʙᴏᴛ ɴᴀᴍᴇ : TOXIC LOVER
+┋ ᴘʀᴇғɪx : .
+┋ ᴍᴏᴅᴇ : AI Chat + Commands
+┋
+┣━━━⊷ COMMANDS
+┃ .menu
+┃ .owner
+┃ .quote
+┃ .joke
+┃ .advice
+┃ .fact
+┃ .date
+┃ .time
+┃ .hello
+┃ .bye
+┃ .love
+┃ .meme
+┃ .emoji
+┃ .yesno
+┃ .motivate
+┃ .song
+┃ .poem
+┃ .weather [city]
+┃ .news
+┃ .search [query]
+┗━━━━━━━━━━━━━
+POWERED BY RODGERS`);
+            return;
+          }
 
-        // Greeting
-        await sendMessage(
-          senderId,
-          "Hello, I'm Toxic Lover 💘. How can I help you today?\nOr type `.menu` to explore my commands.\n\nPOWERED BY RODGERS"
-        );
+          if (lower === '.owner') {
+            await sendMessage(senderId,
+`👤 Name: RODGERS ONYANGO
+🏠 Home: KISUMU, KENYA
+📱 Status: SINGLE
+📞 Cont: 0755660053
+🎓 Edu: BACHELOR DEGREE
+🏫 Inst: EGERTON`);
+            return;
+          }
 
-        // Identity questions
-        if (
-          messageText.includes("your name") ||
-          messageText.includes("who are you") ||
-          messageText.includes("who is you") ||
-          messageText.includes("you who")
-        ) {
-          return await sendMessage(
-            senderId,
-            "Am Toxic Lover, made by Rodgers from Madiaba.\nTo learn more about him type `.owner`\n\nPOWERED BY RODGERS"
-          );
+          if (['what’s your name?', 'what is your name?', 'who are you?', 'who is you?'].includes(lower)) {
+            await sendMessage(senderId, "I'm *Toxic Lover*, made by Rodgers from Madiaba. To learn more about him type `.owner`");
+            return;
+          }
+
+          // If no command matched, reply using Gemini
+          const geminiReply = await getGeminiReply(msg);
+          await sendMessage(senderId, geminiReply);
         }
-
-        // .owner command
-        if (messageText === ".owner") {
-          return await sendMessage(
-            senderId,
-            `👤 Name: RODGERS ONYANGO\n📍 Home: KISUMU KENYA\n📶 Status: SINGLE\n📞 CONT: 0755660053\n🎂 AGE: 17 YEARS\n🎓 EDU: BACHELOR DEGREE\n🏫 INST: EGERTON\n\nPOWERED BY RODGERS`
-          );
-        }
-
-        // .menu command
-        if (messageText === ".menu") {
-          return await sendMessage(
-            senderId,
-            `╭──────────────⊷\n┋ 𝙉𝘼𝙈𝙀 : 💻 TOXIC LOVER\n┋ 𝙋𝙍𝙀𝙁𝙄𝙓 : [ . ]\n┋ 𝙈𝙊𝘿𝙀 : PRIVATE\n╰──────────────⊷\n\nAvailable Commands:\n━━━━━━━━━━━━━━━━━\n.menu\n.owner\n.help\n.about\n.joke\n.quote\n.time\n.date\n.hug\n.kiss\n.hello\n.weather\n.story\n.advice\n.meme\n.status\n.love\n.song\n.info\n.clear\n━━━━━━━━━━━━━━━━━\n\nPOWERED BY RODGERS`
-          );
-        }
-
-        // Respond using ChatGPT
-        const reply = await askGPT(messageText);
-        await sendMessage(senderId, `${reply}\n\nPOWERED BY RODGERS`);
       }
-    });
-
+    }
     res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
   }
 });
 
-async function sendMessage(senderId, message) {
+// ✅ Send Message
+async function sendMessage(senderId, msg) {
   try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-      {
-        recipient: { id: senderId },
-        message: { text: message },
-      }
-    );
+    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      messaging_type: 'RESPONSE',
+      recipient: { id: senderId },
+      message: { text: msg }
+    });
   } catch (err) {
-    console.error("Send Error:", err.message);
+    console.error('Messenger Error:', err.response?.data || err.message);
   }
 }
 
-async function askGPT(message) {
+// ✅ Gemini AI Reply
+async function getGeminiReply(userText) {
   try {
-    const res = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: message }],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-      }
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+      { contents: [{ parts: [{ text: userText }] }] }
     );
-    return res.data.choices[0].message.content.trim();
-  } catch (e) {
-    return "🤖 Sorry, I had trouble thinking of a reply.";
+    return response.data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I didn't understand that.";
+  } catch (err) {
+    return "I’m having trouble responding right now. Try again later.";
   }
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Toxic Lover Bot running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ TOXIC LOVER bot live on port ${PORT}`));
