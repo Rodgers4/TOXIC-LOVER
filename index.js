@@ -2,130 +2,140 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Messenger Config
-const PAGE_ACCESS_TOKEN = 'EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD';
-const VERIFY_TOKEN = 'rodgers4';
-const GEMINI_API_KEY = 'AIzaSyCTOyG7rkr0ZnwzuQcYCAW0qgux4fAvWpA';
-
-let greetedUsers = new Set();
 
 app.use(bodyParser.json());
 
-// ✅ Webhook Verification
+// FACEBOOK KEYS
+const PAGE_ACCESS_TOKEN = 'YOUR_PAGE_ACCESS_TOKEN';
+const VERIFY_TOKEN = 'rodgers4';
+
+// GEMINI AI CONFIG
+const GEMINI_API_KEY = 'AIzaSyCTOyG7rkr0ZnwzuQcYCAW0qgux4fAvWpA';
+
+// Track greeted users
+const greetedUsers = new Set();
+
+// Home route
+app.get('/', (req, res) => {
+  res.send('🔥 Toxic Lover Bot is Live!');
+});
+
+// Verify webhook
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
+
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('WEBHOOK VERIFIED');
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// ✅ Messenger Event Handler
+// Handle webhook
 app.post('/webhook', async (req, res) => {
-  const body = req.body;
-  if (body.object === 'page') {
-    for (const entry of body.entry) {
-      for (const event of entry.messaging) {
-        const senderId = event.sender.id;
-        const msg = event.message?.text;
+  try {
+    const body = req.body;
 
-        if (msg) {
-          if (!greetedUsers.has(senderId)) {
-            await sendMessage(senderId, "👋 Hello, I'm *Toxic Lover*. How can I help you today? Or type `.menu` to explore my commands.\n\nPOWERED BY RODGERS");
-            greetedUsers.add(senderId);
+    if (body.object === 'page') {
+      for (const entry of body.entry) {
+        const webhook_event = entry.messaging[0];
+        const sender_psid = webhook_event.sender.id;
+
+        if (webhook_event.message && webhook_event.message.text) {
+          const message = webhook_event.message.text.trim().toLowerCase();
+
+          // Send greeting only once, and only if not .menu
+          if (!greetedUsers.has(sender_psid) && message !== '.menu') {
+            greetedUsers.add(sender_psid);
+            await sendMessage(
+              sender_psid,
+              `👋 Hello, I'm *Toxic Lover*, how can I help you today?\n(Type *.menu* to explore my commands)\n\n_Powered by Rodgers_`
+            );
           }
 
-          const lower = msg.toLowerCase();
-
-          // Command Handling
-          if (lower === '.menu') {
-            await sendMessage(senderId,
-`╭──────────⊷
-┋ ʙᴏᴛ ɴᴀᴍᴇ : TOXIC LOVER
-┋ ᴘʀᴇғɪx : .
-┋ ᴍᴏᴅᴇ : AI Chat + Commands
-┋
-┣━━━⊷ COMMANDS
-┃ .menu
-┃ .owner
-┃ .quote
-┃ .joke
-┃ .advice
-┃ .fact
-┃ .date
-┃ .time
-┃ .hello
-┃ .bye
-┃ .love
-┃ .meme
-┃ .emoji
-┃ .yesno
-┃ .motivate
-┃ .song
-┃ .poem
-┃ .weather [city]
-┃ .news
-┃ .search [query]
-┗━━━━━━━━━━━━━
-POWERED BY RODGERS`);
-            return;
-          }
-
-          if (lower === '.owner') {
-            await sendMessage(senderId,
-`👤 Name: RODGERS ONYANGO
-🏠 Home: KISUMU, KENYA
-📱 Status: SINGLE
-📞 Cont: 0755660053
-🎓 Edu: BACHELOR DEGREE
-🏫 Inst: EGERTON`);
-            return;
-          }
-
-          if (['what’s your name?', 'what is your name?', 'who are you?', 'who is you?'].includes(lower)) {
-            await sendMessage(senderId, "I'm *Toxic Lover*, made by Rodgers from Madiaba. To learn more about him type `.owner`");
-            return;
-          }
-
-          // If no command matched, reply using Gemini
-          const geminiReply = await getGeminiReply(msg);
-          await sendMessage(senderId, geminiReply);
+          await handleUserMessage(sender_psid, message);
         }
       }
+      res.status(200).send('EVENT_RECEIVED');
+    } else {
+      res.sendStatus(404);
     }
-    res.sendStatus(200);
+  } catch (err) {
+    console.error('❌ Webhook error:', err.message);
+    res.status(200).send('Error handled');
   }
 });
 
-// ✅ Send Message
-async function sendMessage(senderId, msg) {
-  try {
-    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      messaging_type: 'RESPONSE',
-      recipient: { id: senderId },
-      message: { text: msg }
-    });
-  } catch (err) {
-    console.error('Messenger Error:', err.response?.data || err.message);
+// Handle user messages
+async function handleUserMessage(sender_psid, message) {
+  if (message === '.menu') {
+    await sendMessage(sender_psid, `
+╭──────────────⊷  
+┋ *💬 TOXIC LOVER COMMANDS*  
+┋  
+┋ .autostatus  
+┋ .react  
+┋ .chatbot  
+┋ .fakeTyping  
+┋ .say  
+┋ .broadcast  
+┋ .info  
+┋ .owner  
+┋ .qr  
+┋ .help  
+┋ .ai  
+┋ .google  
+┋ .ytmp3  
+┋ .ytmp4  
+┋ .sticker  
+┋ .groupinfo  
+┋ .invite  
+┋ .shorten  
+┋ .tiktokdl  
+┋ .weather  
+┋  
+╰──────────────⊷  
+_Powered by Rodgers_
+
+👉 [View Channel](https://whatsapp.com/channel/0029VbBH9IGCnA7l7rdZlB0e)
+    `);
+  } else {
+    const reply = await generateGeminiReply(message);
+    await sendMessage(sender_psid, reply);
   }
 }
 
-// ✅ Gemini AI Reply
-async function getGeminiReply(userText) {
+// Send message to user
+async function sendMessage(sender_psid, message) {
+  const url = `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
+  const data = {
+    recipient: { id: sender_psid },
+    message: { text: message },
+  };
+  await axios.post(url, data);
+}
+
+// Gemini AI
+async function generateGeminiReply(userInput) {
   try {
-    const response = await axios.post(
+    const geminiResponse = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
-      { contents: [{ parts: [{ text: userText }] }] }
+      {
+        contents: [{ parts: [{ text: userInput }] }],
+      }
     );
-    return response.data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I didn't understand that.";
+    return geminiResponse.data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm not sure how to reply.";
   } catch (err) {
-    return "I’m having trouble responding right now. Try again later.";
+    console.error('Gemini Error:', err.message);
+    return "Sorry, I couldn't respond. Please try again later.";
   }
 }
 
-app.listen(PORT, () => console.log(`✅ TOXIC LOVER bot live on port ${PORT}`));
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Toxic Lover running on http://localhost:${PORT}`);
+});
