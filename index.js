@@ -4,151 +4,169 @@ const axios = require('axios');
 const app = express();
 require('dotenv').config();
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-
 app.use(bodyParser.json());
 
-// VERIFY WEBHOOK
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+// Verify webhook
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log("Webhook Verified");
+    console.log('Webhook verified');
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// HANDLE MESSAGES
+// Receive messages
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
     for (const entry of body.entry) {
-      const webhook_event = entry.messaging[0];
-      const sender_psid = webhook_event.sender.id;
+      for (const event of entry.messaging) {
+        const senderId = event.sender.id;
 
-      if (webhook_event.message && webhook_event.message.text) {
-        const userMessage = webhook_event.message.text.trim().toLowerCase();
+        if (event.message && event.message.text) {
+          const text = event.message.text.trim().toLowerCase();
 
-        let reply;
+          // Responses
+          if (text === 'what is your name' || text.includes('your name')) {
+            sendMessage(senderId, 'I am Toxic, the Roy\'s finest.\nMy owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒');
+            return;
+          }
 
-        // COMMAND HANDLERS
-        if (userMessage.startsWith('.menu')) {
-          reply = decoratedMenu();
-        } else if (userMessage.startsWith('.lyrics')) {
-          const song = userMessage.replace('.lyrics', '').trim();
-          reply = await getLyrics(song);
-        } else if (userMessage.startsWith('.waifu')) {
-          reply = await getWaifuImage();
-        } else if (userMessage.includes('your name') || userMessage.includes('who is your owner')) {
-          reply = "I am Toxic the Roy's finest. My owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒";
-        } else {
-          reply = await askGroq(userMessage);
+          if (text === 'who is your owner' || text.includes('owner')) {
+            sendMessage(senderId, 'My owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒');
+            return;
+          }
+
+          if (text === '.menu') {
+            sendMenu(senderId);
+            return;
+          }
+
+          if (text.startsWith('.lyrics')) {
+            const song = text.replace('.lyrics', '').trim();
+            if (!song) return sendMessage(senderId, 'Please enter a song name.');
+            const lyrics = `Lyrics for "${song}" not available yet. (Coming Soon 🎶)`;
+            sendMessage(senderId, lyrics + '\n\nType .menu to see available commands');
+            return;
+          }
+
+          if (text === '.waifu') {
+            const imgUrl = `https://api.waifu.pics/sfw/waifu`;
+            sendMessage(senderId, 'Here is your Waifu ❤️');
+            sendImage(senderId, imgUrl);
+            return;
+          }
+
+          // Default: GROK AI
+          const reply = await askGroq(text);
+          sendMessage(senderId, reply + '\n\nType .menu to see available commands');
         }
-
-        reply += "\n\nType .menu to see available commands";
-        await sendMessage(sender_psid, reply);
       }
     }
-
-    res.status(200).send('EVENT_RECEIVED');
+    res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log('Toxic Lover bot is running.');
-});
-
-// Send Message to Messenger
-async function sendMessage(sender_psid, response) {
-  await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-    recipient: { id: sender_psid },
-    message: { text: response }
-  }).catch(e => console.error('Send error:', e.response?.data));
-}
-
-// Groq AI
-async function askGroq(message) {
+// GROQ API (mixes Kiswahili/English fluently)
+async function askGroq(text) {
   try {
-    const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: 'llama3-70b-8192',
-      messages: [{ role: 'user', content: message }],
+    const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+      model: 'mixtral-8x7b-32768',
+      messages: [
+        {
+          role: 'system',
+          content: `Jibu maswali yoyote kwa lugha ya Kiswahili au Kiingereza. Kuwa mkarimu, mjanja na wa msaada.`
+        },
+        {
+          role: 'user',
+          content: text
+        }
+      ]
     }, {
       headers: {
         'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json'
       }
     });
-    return res.data.choices[0].message.content;
-  } catch (err) {
-    console.error("Groq error:", err.response?.data);
-    return "Sorry, I couldn't process that.";
+
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    return 'Samahani, kuna hitilafu kwenye akili ya Toxic 🤖';
   }
 }
 
-// Lyrics command
-async function getLyrics(song) {
-  try {
-    const res = await axios.get(`https://some-random-api.ml/lyrics?title=${encodeURIComponent(song)}`);
-    return `🎶 ${res.data.title} by ${res.data.author}\n\n${res.data.lyrics}`;
-  } catch {
-    return "Lyrics not found. Try another song.";
-  }
+// Messenger Send API
+function sendMessage(senderId, text) {
+  axios.post(`https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+    recipient: { id: senderId },
+    message: { text }
+  }).catch(err => console.error('Error sending message:', err.response?.data || err.message));
 }
 
-// Waifu command
-async function getWaifuImage() {
-  try {
-    const res = await axios.get('https://api.waifu.pics/sfw/waifu');
-    return `Here's a Waifu for you 💖\n${res.data.url}`;
-  } catch {
-    return "Failed to fetch waifu. Try again.";
-  }
+function sendImage(senderId, imageUrl) {
+  axios.post(`https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+    recipient: { id: senderId },
+    message: {
+      attachment: {
+        type: 'image',
+        payload: { url: imageUrl, is_reusable: true }
+      }
+    }
+  }).catch(err => console.error('Error sending image:', err.response?.data || err.message));
 }
 
-// Decorated Menu
-function decoratedMenu() {
-  return `
-╭─────「 💀 TOXIC LOVER MENU 💀 」─────╮
-│ 1. .lyrics [song] - Get lyrics
-│ 2. .waifu - Get anime girl
-│ 3. .quote - Inspiring quote
-│ 4. .advice - Random advice
-│ 5. .fact - Interesting fact
-│ 6. .joke - Tell a joke
-│ 7. .truth - Truth dare
-│ 8. .dare - Dare you
-│ 9. .bored - Bored suggestion
-│10. .math [eqn] - Solve math
-│11. .chat [msg] - Talk with AI
-│12. .age [name] - Guess age
-│13. .gender [name] - Predict gender
-│14. .dog - Random dog
-│15. .cat - Random cat
-│16. .define [word] - Dictionary
-│17. .quoteanime - Anime quote
-│18. .weather [city]
-│19. .emoji [word] - Emojify
-│20. .meme - Get meme
-│21. .number [fact] - Number fact
-│22. .bible [verse] - Bible verse
-│23. .screenshot [url]
-│24. .topic - Random topic
-│25. .ping - Bot response time
-│26. .reminder [text]
-│27. .poem [topic]
-│28. .horoscope [sign]
-│29. .insult - Roast me
-│30. .translate [text]
-╰───────────────⊷  
-𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
-`;
-                   }
+// Stylish Command List
+function sendMenu(senderId) {
+  const menu = `
+╭══════⪩ 𝐓𝐎𝐗𝐈𝐂 𝐌𝐄𝐍𝐔 ⪨══════╮
+
+🧠 𝐂𝐇𝐀𝐓 𝐀𝐈
+├─ .menu
+├─ .waifu
+├─ .lyrics (song)
+
+🕹️ 𝐆𝐄𝐍𝐄𝐑𝐀𝐓𝐎𝐑𝐒
+├─ .quote
+├─ .advice
+├─ .define (word)
+├─ .fact
+├─ .joke
+
+🎬 𝐌𝐄𝐃𝐈𝐀
+├─ .song (coming soon)
+├─ .video (coming soon)
+
+👩‍💻 𝐔𝐓𝐈𝐋𝐈𝐓𝐈𝐄𝐒
+├─ .time
+├─ .date
+├─ .weather (coming soon)
+├─ .status
+
+🎉 𝐅𝐔𝐍
+├─ .truth
+├─ .dare
+├─ .meme
+├─ .pickup
+
+🛠️ 𝐁𝐎𝐓 𝐌𝐎𝐃𝐄
+├─ .private
+├─ .public
+├─ .restart
+
+╰─────────────⪩
+POWERED BY: 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
+  `;
+  sendMessage(senderId, menu);
+              }
