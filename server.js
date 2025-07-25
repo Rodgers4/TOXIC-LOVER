@@ -1,122 +1,112 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
-require("dotenv").config();
-
+const express = require('express');
+const bodyParser = require('body-parser');
+const axios = require('axios');
 const app = express();
-app.use(bodyParser.json());
-
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-
-app.get("/", (req, res) => {
-  res.send("Toxic Lover bot is live 💖");
-});
-
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
-  }
-});
-
-app.post("/webhook", async (req, res) => {
-  const body = req.body;
-  if (body.object === "page") {
-    for (const entry of body.entry) {
-      const webhookEvent = entry.messaging[0];
-      const senderPsid = webhookEvent.sender.id;
-
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const receivedMessage = webhookEvent.message.text.toLowerCase();
-
-        // Static replies
-        if (receivedMessage === ".menu") {
-          const commandList = `
-╭━━━━━━━⚙️ 𝐂𝐎𝐌𝐌𝐀𝐍𝐃 𝐋𝐈𝐒𝐓 ⚙️━━━━━━━╮
-┃
-┣⏺️ .sticker — Make a sticker
-┣⏺️ .quote — Get a quote
-┣⏺️ .joke — Random joke
-┣⏺️ .meme — Random meme
-┣⏺️ .advice — Life advice
-┣⏺️ .fact — Fun fact
-┣⏺️ .say — Repeat words
-┣⏺️ .time — Current time
-┣⏺️ .date — Current date
-┣⏺️ .weather — Weather info
-┣⏺️ .news — Latest news
-┣⏺️ .anime — Anime image
-┣⏺️ .lyrics — Song lyrics
-┣⏺️ .calc — Calculator
-┣⏺️ .search — Quick search
-┣⏺️ .translate — Language tool
-┣⏺️ .reminder — Set reminder
-┣⏺️ .image — AI Image Gen
-┣⏺️ .define — Dictionary
-┣⏺️ .owner — Bot owner
-┃
-╰───────────⧉ 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒 ⧉──────────╯
-          `;
-          return sendMessage(senderPsid, commandList);
-        }
-
-        if (receivedMessage.includes("what is your name")) {
-          return sendMessage(senderPsid, "Am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 a girl made to be authentic");
-        }
-
-        if (receivedMessage.includes("who is your owner")) {
-          return sendMessage(senderPsid, "My beloved/Intelligent/Cheeky owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒");
-        }
-
-        // GROQ AI response
-        try {
-          const aiResponse = await axios.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-              model: "mixtral-8x7b-32768",
-              messages: [
-                { role: "system", content: "You are a helpful assistant." },
-                { role: "user", content: webhookEvent.message.text }
-              ]
-            },
-            {
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${GROQ_API_KEY}`
-              }
-            }
-          );
-
-          const botReply = aiResponse.data.choices[0].message.content.trim();
-          const finalReply = `${botReply}\n\nType .menu to see all cmds`;
-          return sendMessage(senderPsid, finalReply);
-        } catch (err) {
-          console.error("Groq API Error:", err.response?.data || err.message);
-          return sendMessage(senderPsid, "Oops! I couldn't respond. Please try again later.");
-        }
-      }
-    }
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
-  }
-});
-
-function sendMessage(senderPsid, response) {
-  return axios.post(
-    `https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: senderPsid },
-      message: { text: response }
-    }
-  );
-}
+require('dotenv').config();
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Toxic Lover is running on port " + PORT));
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+app.use(bodyParser.json());
+
+app.post('/webhook', async (req, res) => {
+  const body = req.body;
+
+  if (body.object) {
+    const entry = body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const message = changes?.value?.messages?.[0];
+
+    if (message) {
+      const from = message.from;
+      const msgText = message.text?.body?.toLowerCase() || '';
+
+      // Command: .menu
+      if (msgText === '.menu') {
+        const menuText = `
+╭━〔 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒 〕━⬣
+┃🧠 *AI & Chat:*
+┃┣ .ask
+┃┣ .brainstorm
+┃┣ .quote
+┃┣ .explain
+┃┗ .define
+┃
+┃🎉 *Fun:*
+┃┣ .joke
+┃┣ .meme
+┃┣ .roast
+┃┣ .fakecall
+┃┗ .troll
+┃
+┃🛠️ *Utilities:*
+┃┣ .time
+┃┣ .weather
+┃┣ .news
+┃┣ .translate
+┃┗ .calc
+┃
+┃📥 *Downloader:*
+┃┣ .ytmp3
+┃┣ .ytmp4
+┃┣ .tiktok
+┃┣ .fb
+┃┗ .insta
+╰━━━━━━━━━━━━━━━━━━━⬣
+POWERED BY 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
+        `;
+        return sendMessage(from, menuText);
+      }
+
+      // Custom replies
+      if (msgText.includes('your name')) {
+        return sendMessage(from, `Am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 a girl made to be authentic\n\nType .menu to see all cmds`);
+      }
+
+      if (msgText.includes('your owner') || msgText.includes("who is your owner")) {
+        return sendMessage(from, `My owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒\n\nType .menu to see all cmds`);
+      }
+
+      // Fallback: Use Groq AI for all other queries
+      const groqReply = await queryGroq(msgText);
+      return sendMessage(from, `${groqReply}\n\nType .menu to see all cmds`);
+    }
+  }
+
+  res.sendStatus(200);
+});
+
+async function queryGroq(prompt) {
+  try {
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama3-8b-8192',
+        messages: [
+          { role: 'system', content: 'You are a helpful and respectful AI girl named 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 created by SIR RODGERS.' },
+          { role: 'user', content: prompt }
+        ]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return response.data.choices?.[0]?.message?.content?.trim() || "Sorry, I couldn't understand that.";
+  } catch (error) {
+    console.error('Groq API error:', error.message);
+    return "Oops! Something went wrong with my brain 💔.";
+  }
+}
+
+function sendMessage(to, message) {
+  // Simulate success (you'll replace with actual WhatsApp API or webhook reply)
+  console.log(`Message sent to ${to}:`, message);
+}
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
