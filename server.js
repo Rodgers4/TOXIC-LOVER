@@ -4,97 +4,121 @@ const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
-const port = process.env.PORT || 3000;
-
 app.use(bodyParser.json());
 
-const thickLine = "╭━━━━━━━━━━━━━━━━━━━━━⊷";
-const commandList = `
-${thickLine}
-┋ ʙᴏᴛ ɴᴀᴍᴇ :  𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑
-┋ ᴘʀᴇғɪx : .
-┋ ᴍᴏᴅᴇ : PRIVATE
-${thickLine}
-┣━━⪼ GENERAL CMDS
-┃ • .menu
-┃ • .ping
-┃ • .info
-┃ • .rules
-┣━━⪼ GROUP CMDS
-┃ • .kick
-┃ • .add
-┃ • .promote
-┃ • .demote
-┃ • .tagall
-┣━━⪼ FUN CMDS
-┃ • .joke
-┃ • .quote
-┃ • .meme
-┃ • .truth
-┃ • .dare
-┣━━⪼ UTILITY CMDS
-┃ • .weather
-┃ • .translate
-┃ • .time
-┃ • .define
-┃ • .reminder
-${thickLine}
-┋ 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
-${thickLine}
+// FB Messenger Credentials
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+
+// GROQ AI Setup
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = "mixtral-8x7b-32768"; // You can change to "llama3-70b-8192" if needed
+
+// MENU MESSAGE
+const commandMenu = `
+╭━━━━━━━━━━⊷
+┃ 🤖 𝗧𝗢𝗫𝗜𝗖 𝗟𝗢𝗩𝗘𝗥 - 𝗕𝗢𝗧 𝗠𝗘𝗡𝗨
+╰━━━━━━━━━━⊷
+┣ 🛠 𝗕𝗔𝗦𝗜𝗖 𝗖𝗢𝗠𝗠𝗔𝗡𝗗𝗦
+┃ ┗ .help ┃ .ping ┃ .about ┃ .status
+┣ 💬 𝗖𝗛𝗔𝗧 & 𝗜𝗡𝗙𝗢
+┃ ┗ .chatgpt ┃ .quote ┃ .joke ┃ .fact
+┣ 🎨 𝗙𝗨𝗡 𝗖𝗢𝗠𝗠𝗔𝗡𝗗𝗦
+┃ ┗ .meme ┃ .truth ┃ .dare ┃ .roast
+┣ 🛡 𝗔𝗗𝗠𝗜𝗡 𝗖𝗢𝗠𝗠𝗔𝗡𝗗𝗦
+┃ ┗ .ban ┃ .unban ┃ .warn ┃ .kick
+┣ 🔍 𝗨𝗧𝗜𝗟𝗜𝗧𝗬
+┃ ┗ .weather ┃ .news ┃ .define ┃ .time
+┣ 💎 𝗘𝗫𝗧𝗥𝗔𝗦
+┃ ┗ .owner ┃ .support ┃ .feedback ┃ .menu
+╰━━━━━━━━━━⊷
+🌐 POWERED BY 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
 `;
 
-app.post("/webhook", async (req, res) => {
-  const message = req.body?.message?.toLowerCase() || "";
-  let reply = "";
+// Verify Webhook
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-  if (!message) return res.sendStatus(200);
-
-  if (message === ".menu") {
-    reply = commandList;
-  } else if (message.includes("what is your name")) {
-    reply = "Am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 a girl made to be authentic";
-  } else if (message.includes("who is your owner")) {
-    reply = "My owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒";
+  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
+    res.status(200).send(challenge);
   } else {
-    try {
-      const groqRes = await axios.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          model: "llama3-70b-8192",
-          messages: [
-            {
-              role: "system",
-              content: "You are TOXIC LOVER, a loyal and intelligent female bot created by SIR RODGERS. Always be respectful, polite, and sweet.",
-            },
-            {
-              role: "user",
-              content: message,
-            },
-          ],
-          temperature: 0.7,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          },
-        }
-      );
-
-      reply = groqRes.data.choices[0].message.content + "\n\nType .menu to see all cmds";
-    } catch (error) {
-      console.error("Groq API error:", error.message);
-      reply = "Sorry, I couldn't process that. Please try again.\n\nType .menu to see all cmds";
-    }
+    res.sendStatus(403);
   }
-
-  return res.json({ reply });
 });
 
-app.get("/", (req, res) => {
-  res.send("💖 TOXIC LOVER BOT SERVER IS RUNNING 💖");
+// Handle Incoming Messages
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
+
+  if (body.object === "page") {
+    for (const entry of body.entry) {
+      const webhook_event = entry.messaging[0];
+      const sender_psid = webhook_event.sender.id;
+
+      if (webhook_event.message && webhook_event.message.text) {
+        const userMessage = webhook_event.message.text.trim().toLowerCase();
+
+        // Commands
+        if (userMessage === ".menu") {
+          await sendMessage(sender_psid, commandMenu);
+        } else if (userMessage.includes("who is your owner")) {
+          await sendMessage(sender_psid, "My owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒");
+        } else {
+          const reply = await askGroq(userMessage);
+          await sendMessage(sender_psid, `${reply}\n\n🧠 Type .menu to see all cmds`);
+        }
+      }
+    }
+
+    res.status(200).send("EVENT_RECEIVED");
+  } else {
+    res.sendStatus(404);
+  }
 });
 
-app.listen(port, () => {
-  console.log(`✅ TOXIC LOVER bot server running at http://localhost:${port}`);
-});
+// Send FB Message
+async function sendMessage(sender_psid, message) {
+  const requestBody = {
+    recipient: { id: sender_psid },
+    message: { text: message },
+  };
+
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      requestBody
+    );
+  } catch (err) {
+    console.error("Error sending message:", err.response?.data || err.message);
+  }
+}
+
+// Ask Groq
+async function askGroq(question) {
+  try {
+    const res = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: GROQ_MODEL,
+        messages: [{ role: "user", content: question }],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    return res.data.choices[0].message.content.trim();
+  } catch (err) {
+    console.error("Groq error:", err.response?.data || err.message);
+    return "⚠️ Sorry, I'm having trouble thinking right now.";
+  }
+}
+
+// Start Server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Toxic Lover bot running on port ${PORT}`));
