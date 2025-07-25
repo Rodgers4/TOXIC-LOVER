@@ -1,124 +1,116 @@
 const express = require("express");
+const bodyParser = require("body-parser");
 const axios = require("axios");
-require("dotenv").config();
+
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 3000;
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+app.use(bodyParser.json());
 
-// Webhook Verification
+app.get("/", (req, res) => {
+  res.send("Toxic Lover Facebook Bot is live 💖");
+});
+
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
+
+  if (body.object === "page") {
+    body.entry.forEach(async (entry) => {
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
+
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const userMessage = webhookEvent.message.text.toLowerCase();
+
+        // .menu command
+        if (userMessage === ".menu") {
+          await sendText(senderId, `
+╭──🎀 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐌𝐄𝐍𝐔 🎀──╮
+│ 👑 𝐆𝐄𝐍𝐄𝐑𝐀𝐋 𝐂𝐌𝐃𝐒
+│ ━ .menu, .about, .owner, .ping
+│
+│ 💬 𝐂𝐇𝐀𝐓 & 𝐀𝐈
+│ ━ .ask, .fact, .quote, .define
+│
+│ 🔧 𝐓𝐎𝐎𝐋𝐒
+│ ━ .calc, .shorten, .weather
+│
+│ 🎮 𝐅𝐔𝐍
+│ ━ .joke, .meme, .truth, .dare
+│
+│ 💕 𝐋𝐎𝐕𝐄 & 𝐅𝐄𝐄𝐋𝐒
+│ ━ .pickup, .lovequote, .rate
+│
+│ 📚 𝐄𝐃𝐔𝐂𝐀𝐓𝐈𝐎𝐍
+│ ━ .gpt, .translate, .meaning
+│
+│ 📸 𝐌𝐄𝐃𝐈𝐀
+│ ━ .img, .ytmp3, .ytmp4
+│
+│ 🛡️ 𝐀𝐃𝐌𝐈𝐍
+│ ━ .ban, .kick, .unban
+╰──────────
+𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
+          `.trim());
+          return;
+        }
+
+        // Custom questions
+        if (userMessage.includes("what is your name")) {
+          await sendText(senderId, "Am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 a girl made to be authentic\n\nType .menu to see available cmds");
+          return;
+        }
+
+        if (userMessage.includes("who is your owner")) {
+          await sendText(senderId, "My beloved/Intelligent/Cheeky owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒\n\nType .menu to see available cmds");
+          return;
+        }
+
+        // Forward to kaiz API
+        try {
+          const response = await axios.get("https://kaiz-apis.gleeze.com/", {
+            params: { message: userMessage },
+          });
+
+          const aiReply = response.data?.response || "I'm here but quiet...";
+
+          await sendText(senderId, aiReply + "\n\nType .menu to see available cmds");
+        } catch (err) {
+          await sendText(senderId, "Oops! I ran into an error. Try again later.\n\nType .menu to see available cmds");
+        }
+      }
+    });
+
+    res.status(200).send("EVENT_RECEIVED");
+  } else {
+    res.sendStatus(404);
+  }
+});
+
+// Messenger webhook verification
 app.get("/webhook", (req, res) => {
+  const VERIFY_TOKEN = "rodgers4";
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("Webhook verified");
+
+  if (mode && token === VERIFY_TOKEN) {
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// Handle incoming messages
-app.post("/webhook", async (req, res) => {
-  const body = req.body;
-
-  if (body.object === "page") {
-    for (const entry of body.entry) {
-      const webhook_event = entry.messaging[0];
-      const sender_psid = webhook_event.sender.id;
-
-      if (webhook_event.message && webhook_event.message.text) {
-        const received_message = webhook_event.message.text.trim();
-
-        if (received_message === ".menu") {
-          const menuMessage = `
-╭───────────⊷
-┋ 🌟 *QUEEN BELLA V1* 🌟
-┋ Prefix: \`. \`
-┋ Mode: Private AI
-┣━━━━━━━━━━━━━━
-┃ 🛠 *Automation*
-┃ ┣ .autostatus
-┃ ┣ .autoreact
-┃ ┣ .autotyping
-┃ ┣ .autoclear
-┃ ┣ .autoemoji
-┣━━━━━━━━━━━━━━
-┃ 💬 *Interaction*
-┃ ┣ .chatgpt
-┃ ┣ .gemini
-┃ ┣ .groq
-┃ ┣ .blackbox
-┃ ┣ .askbella
-┣━━━━━━━━━━━━━━
-┃ 🧠 *Utilities*
-┃ ┣ .owner
-┃ ┣ .repo
-┃ ┣ .ping
-┃ ┣ .help
-┃ ┣ .about
-┣━━━━━━━━━━━━━━
-┃ 🎭 *Fun*
-┃ ┣ .joke
-┃ ┣ .meme
-┃ ┣ .fact
-┃ ┣ .truth
-┃ ┣ .dare
-┣━━━━━━━━━━━━━━
-┃ 👑 POWERED BY RODGERS
-╰───────────⊷
-          `;
-          await sendMessage(sender_psid, menuMessage);
-        } else {
-          const reply = await askGroq(received_message);
-          await sendMessage(sender_psid, reply);
-        }
-      }
-    }
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
-  }
-});
-
-// Function to send message back
-async function sendMessage(sender_psid, response) {
+async function sendText(senderId, text) {
   await axios.post(
-    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    `https://graph.facebook.com/v18.0/me/messages?access_token=YOUR_PAGE_ACCESS_TOKEN`,
     {
-      recipient: { id: sender_psid },
-      message: { text: response },
+      recipient: { id: senderId },
+      message: { text },
     }
   );
 }
 
-// Groq AI response
-async function askGroq(message) {
-  try {
-    const groqRes = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "mixtral-8x7b-32768",
-        messages: [{ role: "user", content: message }],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    return groqRes.data.choices[0].message.content.trim();
-  } catch (err) {
-    console.error("Groq error:", err.response?.data || err.message);
-    return "Sorry, I'm having trouble responding right now.";
-  }
-}
-
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`Toxic Lover bot server running on port ${PORT}`);
 });
