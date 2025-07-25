@@ -3,93 +3,17 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(bodyParser.json());
 
+const PAGE_ACCESS_TOKEN = "YOUR_PAGE_ACCESS_TOKEN";
+const VERIFY_TOKEN = "rodgers4";
+const GROQ_API_KEY = "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";
+
 app.get("/", (req, res) => {
-  res.send("Toxic Lover Facebook Bot is live 💖");
+  res.send("TOXIC LOVER is Live 😎");
 });
 
-app.post("/webhook", async (req, res) => {
-  const body = req.body;
-
-  if (body.object === "page") {
-    body.entry.forEach(async (entry) => {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
-
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const userMessage = webhookEvent.message.text.toLowerCase();
-
-        // .menu command
-        if (userMessage === ".menu") {
-          await sendText(senderId, `
-╭──🎀 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐌𝐄𝐍𝐔 🎀──╮
-│ 👑 𝐆𝐄𝐍𝐄𝐑𝐀𝐋 𝐂𝐌𝐃𝐒
-│ ━ .menu, .about, .owner, .ping
-│
-│ 💬 𝐂𝐇𝐀𝐓 & 𝐀𝐈
-│ ━ .ask, .fact, .quote, .define
-│
-│ 🔧 𝐓𝐎𝐎𝐋𝐒
-│ ━ .calc, .shorten, .weather
-│
-│ 🎮 𝐅𝐔𝐍
-│ ━ .joke, .meme, .truth, .dare
-│
-│ 💕 𝐋𝐎𝐕𝐄 & 𝐅𝐄𝐄𝐋𝐒
-│ ━ .pickup, .lovequote, .rate
-│
-│ 📚 𝐄𝐃𝐔𝐂𝐀𝐓𝐈𝐎𝐍
-│ ━ .gpt, .translate, .meaning
-│
-│ 📸 𝐌𝐄𝐃𝐈𝐀
-│ ━ .img, .ytmp3, .ytmp4
-│
-│ 🛡️ 𝐀𝐃𝐌𝐈𝐍
-│ ━ .ban, .kick, .unban
-╰──────────
-𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
-          `.trim());
-          return;
-        }
-
-        // Custom questions
-        if (userMessage.includes("what is your name")) {
-          await sendText(senderId, "Am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 a girl made to be authentic\n\nType .menu to see available cmds");
-          return;
-        }
-
-        if (userMessage.includes("who is your owner")) {
-          await sendText(senderId, "My beloved/Intelligent/Cheeky owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒\n\nType .menu to see available cmds");
-          return;
-        }
-
-        // Forward to kaiz API
-        try {
-          const response = await axios.get("https://kaiz-apis.gleeze.com/", {
-            params: { message: userMessage },
-          });
-
-          const aiReply = response.data?.response || "I'm here but quiet...";
-
-          await sendText(senderId, aiReply + "\n\nType .menu to see available cmds");
-        } catch (err) {
-          await sendText(senderId, "Oops! I ran into an error. Try again later.\n\nType .menu to see available cmds");
-        }
-      }
-    });
-
-    res.status(200).send("EVENT_RECEIVED");
-  } else {
-    res.sendStatus(404);
-  }
-});
-
-// Messenger webhook verification
 app.get("/webhook", (req, res) => {
-  const VERIFY_TOKEN = "rodgers4";
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
@@ -101,16 +25,110 @@ app.get("/webhook", (req, res) => {
   }
 });
 
-async function sendText(senderId, text) {
+app.post("/webhook", async (req, res) => {
+  const body = req.body;
+
+  if (body.object === "page") {
+    for (const entry of body.entry) {
+      for (const event of entry.messaging) {
+        const sender = event.sender.id;
+        if (event.message && event.message.text) {
+          const msg = event.message.text.toLowerCase();
+
+          if (msg === ".menu") {
+            return sendMenu(sender);
+          }
+
+          if (msg.includes("what is your name")) {
+            return sendText(sender, "Am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 a girl made to be authentic\n\nType .menu to see all cmds");
+          }
+
+          if (msg.includes("who is your owner")) {
+            return sendText(sender, "My beloved/Intelligent/Cheeky owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒\n\nType .menu to see all cmds");
+          }
+
+          const groqReply = await askGroq(msg);
+          return sendText(sender, `${groqReply}\n\nType .menu to see all cmds`);
+        }
+      }
+    }
+    res.sendStatus(200);
+  } else {
+    res.sendStatus(404);
+  }
+});
+
+async function askGroq(userMsg) {
+  try {
+    const res = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "mixtral-8x7b-32768",
+        messages: [{ role: "user", content: userMsg }],
+        temperature: 0.7
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    return res.data.choices[0].message.content;
+  } catch (err) {
+    console.error("GROQ API ERROR:", err.message);
+    return "Something went wrong with AI 😢";
+  }
+}
+
+async function sendText(sender, message) {
   await axios.post(
-    `https://graph.facebook.com/v18.0/me/messages?access_token=YOUR_PAGE_ACCESS_TOKEN`,
+    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
     {
-      recipient: { id: senderId },
-      message: { text },
+      recipient: { id: sender },
+      message: { text: message }
     }
   );
 }
 
-app.listen(PORT, () => {
-  console.log(`Toxic Lover bot server running on port ${PORT}`);
-});
+async function sendMenu(sender) {
+  const menu = `
+╔═════════❖
+║ 🖥️ 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐁𝐎𝐓  
+║━━━━━━━━━━━━━━━━
+║ ✦ GROUP A — CHAT
+║ ⌲ .ai
+║ ⌲ .ask
+║ ⌲ .define
+║ ⌲ .search
+║ ⌲ .quote
+║━━━━━━━━━━━━━━━━
+║ ✦ GROUP B — MEDIA
+║ ⌲ .ytmp3
+║ ⌲ .ytmp4
+║ ⌲ .tiktok
+║ ⌲ .insta
+║ ⌲ .fbdown
+║━━━━━━━━━━━━━━━━
+║ ✦ GROUP C — FUN
+║ ⌲ .joke
+║ ⌲ .meme
+║ ⌲ .roast
+║ ⌲ .truth
+║ ⌲ .dare
+║━━━━━━━━━━━━━━━━
+║ ✦ GROUP D — TOOLS
+║ ⌲ .weather
+║ ⌲ .translate
+║ ⌲ .reminder
+║ ⌲ .shorturl
+║ ⌲ .qrcode
+╚═════════❖
+
+𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒
+`;
+  await sendText(sender, menu);
+}
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server ready on PORT " + PORT));
