@@ -1,105 +1,97 @@
 const express = require('express');
-const bodyParser = require('body-parser');
 const axios = require('axios');
+const bodyParser = require('body-parser');
+const app = express();
 require('dotenv').config();
 
-const app = express();
-app.use(bodyParser.json());
-
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-app.get('/', (req, res) => {
+app.use(bodyParser.json());
+
+// Webhook verification
+app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
   if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
+    return res.status(200).send(challenge);
   } else {
-    res.sendStatus(403);
+    return res.sendStatus(403);
   }
 });
 
-// Handle incoming messages
-app.post('/', async (req, res) => {
+// Receive messages
+app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
     for (const entry of body.entry) {
-      const webhook_event = entry.messaging[0];
-      const sender_psid = webhook_event.sender.id;
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
 
-      if (webhook_event.postback && webhook_event.postback.payload === 'GET_STARTED') {
-        await sendMessage(sender_psid, "Hello there👋 am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 made by Developer 𝐑𝐎𝐃𝐆𝐄𝐑𝐒, how can I assist you today?");
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const userMessage = webhookEvent.message.text;
+
+        const reply = await getGroqResponse(userMessage);
+
+        await sendMessage(senderId, reply + `\n\nType anything to continue chatting.`);
       }
 
-      if (webhook_event.message && webhook_event.message.text) {
-        const userMessage = webhook_event.message.text;
-        try {
-          const aiReply = await getGroqReply(userMessage);
-          await sendMessage(sender_psid, aiReply);
-        } catch (error) {
-          console.error('Error responding with Groq:', error.message);
-        }
+      // Handle the "Get Started" postback
+      if (webhookEvent.postback && webhookEvent.postback.payload === 'GET_STARTED') {
+        await sendMessage(
+          senderId,
+          `Hello there👋 am 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 made by Developer 𝐑𝐎𝐃𝐆𝐄𝐑𝐒, how can I assist you today?`
+        );
       }
     }
-    res.status(200).send('EVENT_RECEIVED');
+    res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-// Groq AI Response
-async function getGroqReply(userMessage) {
-  const response = await axios.post(
-    'https://api.groq.com/openai/v1/chat/completions',
-    {
-      model: 'mixtral-8x7b-32768',
-      messages: [{ role: 'user', content: userMessage }],
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  return response.data.choices[0].message.content.trim();
-}
-
-// Send Message to Messenger
-async function sendMessage(sender_psid, message) {
-  await axios.post(
-    `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: sender_psid },
-      message: { text: message },
-    }
-  );
-}
-
-// Setup Get Started Button
-async function setupGetStarted() {
+// Function to call Groq API
+async function getGroqResponse(message) {
   try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/me/messenger_profile?access_token=${PAGE_ACCESS_TOKEN}`,
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
       {
-        get_started: {
-          payload: "GET_STARTED"
-        }
+        model: 'mixtral-8x7b-32768',
+        messages: [{ role: 'user', content: message }],
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
       }
     );
-    console.log("✅ 'Get Started' button setup successful.");
-  } catch (error) {
-    console.error("❌ Failed to setup 'Get Started':", error.message);
+    return response.data.choices[0].message.content.trim();
+  } catch (err) {
+    console.error('Groq error:', err.message);
+    return 'Sorry, something went wrong while talking to my brain 😓';
   }
 }
 
+// Send message to user
+async function sendMessage(recipientId, text) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        recipient: { id: recipientId },
+        message: { text },
+      }
+    );
+  } catch (err) {
+    console.error('Facebook Send Error:', err.message);
+  }
+}
+
+// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🔥 Server is running on port ${PORT}`);
-  setupGetStarted(); // Initialize Get Started on launch
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
