@@ -1,13 +1,13 @@
 {
   "name": "toxic-lover",
   "version": "1.0.0",
-  "description": "Facebook Messenger bot powered by GPT-4o for Rodgers",
-  "main": "webhook.js",
+  "description": "Facebook Messenger bot",
+  "main": "server.js",
   "scripts": {
-    "start": "node webhook.js"
+    "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.0",
+    "axios": "^1.6.8",
     "body-parser": "^1.20.2",
     "express": "^4.18.2"
   }
