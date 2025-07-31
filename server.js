@@ -1,115 +1,104 @@
-const express = require('express');
-const axios = require('axios');
-const bodyParser = require('body-parser');
-const app = express();
-const PORT = process.env.PORT || 3000;
+const express = require("express");
+const bodyParser = require("body-parser");
+const axios = require("axios");
 
-// Replace with your actual tokens
-const PAGE_ACCESS_TOKEN = 'EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD';
-const VERIFY_TOKEN = 'rodgers4';
-const KAIZ_API_KEY = '5f2fb551-c027-479e-88be-d90e5dd7d7e0';
+const app = express();
+const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
 
 app.use(bodyParser.json());
 
-// Facebook verification
-app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('WEBHOOK_VERIFIED');
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+// Webhook verification
+app.get("/webhook", (req, res) => {
+  const VERIFY_TOKEN = "rodgers4";
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode && token) {
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      return res.status(200).send(challenge);
+    } else {
+      return res.sendStatus(403);
+    }
   }
 });
 
-// Handle incoming messages
-app.post('/webhook', async (req, res) => {
+// Message handler
+app.post("/webhook", async (req, res) => {
   const body = req.body;
 
-  if (body.object === 'page') {
+  if (body.object === "page") {
     for (const entry of body.entry) {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
+      const webhook_event = entry.messaging[0];
+      const senderId = webhook_event.sender.id;
 
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const messageText = webhookEvent.message.text.trim().toLowerCase();
+      if (webhook_event.message && webhook_event.message.text) {
+        const message = webhook_event.message.text.trim().toLowerCase();
 
-        if (messageText === '.menu') {
-          await sendText(senderId, getMenu());
+        // .menu command
+        if (message === ".menu") {
+          const menuText = `
+╭───『 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐁𝐎𝐓 』───╮
+│ .menu        – Show this menu
+│ .help        – Assistance
+│ .autostatus  – Enable Auto Status
+│ .react       – Auto Emoji Reaction
+│ .viewstatus  – View WhatsApp Status
+│ .owner       – Show Bot Owner
+│ .ai          – Talk to AI
+│ .joke        – Random Joke
+│ .quote       – Daily Quote
+│ .love        – Love Message
+│ .fake        – Fake Typing
+│ .info        – User Info
+│ .chatbot     – Toggle Chat Mode
+│ .about       – Bot Details
+│ .group       – Group Tools
+│ .tools       – Extra Tools
+│ .fun         – Fun Commands
+│ .image       – Generate Image
+│ .weather     – Weather Info
+│ .news        – Latest News
+│ .date        – Current Date
+│ .time        – Current Time
+╰─────── 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒 ─────╯
+          `;
+          await sendMessage(senderId, { text: menuText });
         } else {
-          const response = await askGpt4o(messageText);
-          await sendText(senderId, response || '❌ Error contacting GPT-4o');
+          // Ask GPT-4o using your API key
+          try {
+            const { data } = await axios.get("https://kaiz-apis.gleeze.com/api/gpt-4o", {
+              params: {
+                ask: message,
+                apikey: "5f2fb551-c027-479e-88be-d90e5dd7d7e0"
+              }
+            });
+
+            const botReply = data?.response || "🤖 Sorry, no response.";
+            await sendMessage(senderId, { text: botReply });
+          } catch (error) {
+            console.error("GPT-4o error:", error.message);
+            await sendMessage(senderId, { text: "⚠️ Error contacting GPT-4o." });
+          }
         }
       }
     }
-    res.status(200).send('EVENT_RECEIVED');
+    res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-// Send text messages
-async function sendText(senderId, text) {
-  await axios.post(`https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-    messaging_type: 'RESPONSE',
-    recipient: { id: senderId },
-    message: { text }
-  }).catch(err => console.error('Error sending message:', err.response?.data));
+// Send message
+async function sendMessage(senderId, message) {
+  await axios.post(
+    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: senderId },
+      message: message
+    }
+  );
 }
 
-// GPT-4o API handler using Kaiz endpoint
-async function askGpt4o(question) {
-  try {
-    const res = await axios.get('https://kaiz-apis.gleeze.com/api/gpt-4o', {
-      params: {
-        ask: question,
-        apikey: 5f2fb551-c027-479e-88be-d90e5dd7d7e0
-
-        
-      }
-    });
-    return `🤖: ${res.data.response || 'No response'}`;
-  } catch (err) {
-    console.error('GPT-4o error:', err.message);
-    return null;
-  }
-}
-
-// .menu response
-function getMenu() {
-  return `
-╭───────────────╮
-│  🛠️ QUEEN BELLA MENU
-├───────────────┤
-│ .menu
-│ .owner
-│ .autostatus
-│ .react
-│ .deepseek
-│ .gpt4o
-│ .groupinfo
-│ .profile
-│ .sticker
-│ .tiktok
-│ .song
-│ .ytmp3
-│ .ytmp4
-│ .image
-│ .quote
-│ .joke
-│ .meme
-│ .weather
-│ .location
-│ .translate
-╰───────────────╯
-MADE BY RODGERS
-🔗 View Channel: https://whatsapp.com/channel/0029VbBH9IGCnA7l7rdZlB0e
-`;
-}
-
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server live on port ${PORT}`));
