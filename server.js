@@ -1,79 +1,89 @@
+// server.js
 const express = require('express');
-const bodyParser = require('body-parser');
 const axios = require('axios');
+const bodyParser = require('body-parser');
 
 const app = express();
 app.use(bodyParser.json());
 
-// YOUR META APP CREDENTIALS
-const VERIFY_TOKEN = 'rodgers4';
 const PAGE_ACCESS_TOKEN = 'EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD';
+const VERIFY_TOKEN = 'rodgers4';
+const GROQ_API_KEY = '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';
 
-// VERIFY WEBHOOK (GET)
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    res.status(200).send(challenge);
   } else {
-    return res.sendStatus(403);
+    res.sendStatus(403);
   }
 });
 
-// RECEIVING MESSAGES (POST)
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
     for (const entry of body.entry) {
-      for (const event of entry.messaging) {
-        const senderId = event.sender.id;
-        const message = event.message?.text;
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
 
-        if (message) {
-          const reply = await askGpt4o(message, senderId);
-          await sendMessage(senderId, `👑 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑\n\n${reply}`);
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const userMessage = webhookEvent.message.text;
+
+        try {
+          const groqRes = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+              model: 'gpt-4o',
+              messages: [
+                {
+                  role: 'user',
+                  content: userMessage,
+                },
+              ],
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${GROQ_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          const botReply = groqRes.data.choices[0].message.content;
+
+          const decoratedMessage = `╭────── 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 ──────╮\n${botReply}`;
+
+          await sendMessage(senderId, decoratedMessage);
+        } catch (error) {
+          console.error('Error from Groq:', error.message);
+          await sendMessage(senderId, '❌ GPT Error. Try again later.');
         }
       }
     }
-    return res.sendStatus(200);
+
+    res.status(200).send('EVENT_RECEIVED');
   } else {
-    return res.sendStatus(404);
+    res.sendStatus(404);
   }
 });
 
-// FUNCTION TO CALL GPT-4O API
-async function askGpt4o(text, senderId) {
+async function sendMessage(senderId, message) {
   try {
-    const res = await axios.get('https://kaiz-apis.gleeze.com/api/gpt-4o', {
-      params: {
-        ask: text,
-        uid: senderId,
-        webSearch: 'off',
-        apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0'
+    await axios.post(
+      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        recipient: { id: senderId },
+        message: { text: message },
       }
-    });
-    return res.data.response;
-  } catch (err) {
-    console.error('❌ GPT API Error:', err.message);
-    return '[ ❌ ] Error: AI response failed.';
+    );
+  } catch (error) {
+    console.error('Send message error:', error.response?.data || error.message);
   }
 }
 
-// FUNCTION TO SEND MESSAGE TO USER
-async function sendMessage(senderId, text) {
-  try {
-    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      recipient: { id: senderId },
-      message: { text }
-    });
-  } catch (err) {
-    console.error('❌ Send Message Error:', err.response?.data || err.message);
-  }
-}
-
-app.listen(3000, () => {
-  console.log('Toxic Lover Bot running on port 3000!');
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Webhook server is running on port ${PORT}`));
