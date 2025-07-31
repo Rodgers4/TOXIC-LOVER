@@ -3,88 +3,81 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(bodyParser.json());
 
-app.get("/", (req, res) => {
-  res.send("🤖 TOXIC LOVER Chatbot server is live!");
+const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
+const VERIFY_TOKEN = "rodgers4";
+
+const sentWelcome = new Set(); // Tracks who has received welcome
+
+// DeepSeek API endpoint
+const deepSeekAPI = "https://api.deepseek.com/chat";
+const deepSeekAPIKey = "5f2fb551-c027-479e-88be-d90e5dd7d7e0";
+
+// Facebook webhook verification
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode && token === VERIFY_TOKEN) {
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
 });
 
+// Incoming messages
 app.post("/webhook", async (req, res) => {
   const body = req.body;
-
   if (body.object === "page") {
-    body.entry.forEach(async function(entry) {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
+    for (const entry of body.entry) {
+      for (const event of entry.messaging) {
+        const senderId = event.sender.id;
+        if (event.message && event.message.text) {
+          const userMessage = event.message.text;
 
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const userMessage = webhookEvent.message.text.trim();
-
-        try {
-          let reply;
-
-          // 🔹 Use GPT-4o from Kaiz API
-          const gptResponse = await axios.get("https://kaiz-apis.gleeze.com/api/gpt-4o", {
-            params: {
-              ask: userMessage
-            }
-          });
-
-          if (gptResponse.data && gptResponse.data.response) {
-            reply = gptResponse.data.response;
-          } else {
-            reply = "Sorry, GPT-4o could not respond at the moment.";
+          // Send welcome message once
+          if (!sentWelcome.has(senderId)) {
+            await sendMessage(senderId, "Hello 👋, I'm Toxic Lover made by Rodgers. Just send a message to chat with me!");
+            sentWelcome.add(senderId);
           }
 
-          await sendTextMessage(senderId, reply);
-        } catch (error) {
-          console.error("GPT-4o error:", error.message);
-          await sendTextMessage(senderId, "AI is not responding 😥");
+          try {
+            const deepseekRes = await axios.post(deepSeekAPI, {
+              messages: [{ role: "user", content: userMessage }],
+              model: "deepseek-chat"
+            }, {
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${deepSeekAPIKey}`
+              }
+            });
+
+            const reply = deepseekRes.data.choices?.[0]?.message?.content || "Hmm... I didn't get that.";
+            await sendMessage(senderId, reply);
+          } catch (error) {
+            console.error("DeepSeek error:", error.message);
+            await sendMessage(senderId, "Sorry, AI is not responding right now 😔");
+          }
         }
       }
-    });
-
-    res.status(200).send("EVENT_RECEIVED");
+    }
+    res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
 
-// ✅ VERIFY webhook (for FB setup)
-app.get("/webhook", (req, res) => {
-  const VERIFY_TOKEN = "rodgers4";
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode && token) {
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      console.log("WEBHOOK_VERIFIED");
-      res.status(200).send(challenge);
-    } else {
-      res.sendStatus(403);
+// Send a message via Facebook
+async function sendMessage(recipientId, text) {
+  await axios.post(
+    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: recipientId },
+      message: { text: text }
     }
-  }
-});
-
-// 🔹 Send message back to Facebook
-async function sendTextMessage(senderId, messageText) {
-  const PAGE_ACCESS_TOKEN = "YOUR_PAGE_ACCESS_TOKEN"; // Replace with your token
-
-  const requestBody = {
-    recipient: { id: senderId },
-    message: { text: messageText }
-  };
-
-  try {
-    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, requestBody);
-  } catch (error) {
-    console.error("Unable to send message:", error.message);
-  }
+  );
 }
 
-app.listen(PORT, () => {
-  console.log(`✅ Server is running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Toxic Lover is live on port " + PORT));
