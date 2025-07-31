@@ -3,10 +3,7 @@ const axios = require("axios");
 const bodyParser = require("body-parser");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-const VERIFY_TOKEN = "Rodgers4";
-const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
+const PAGE_ACCESS_TOKEN = "EAARnZBLCwD9EBPGn3bIcMgW37Nw9uBnWZAADLuh0FcwIBOF94FyZAE9z6hYP6mZCCfnp3kuAhTJTFnVhRHrcieKl2S4ZCeymyqO6BLZAeyI619sPgsJNEvcPnCvMD0jKFJ6wdcDdk2ZBqb3SS3LnCP6IP0GSykKTHj3WTYeafUUAjCXE5f61Yt1sEG1JI37f3WYZC7SQSOmMtwZDZD";
 
 app.use(bodyParser.json());
 
@@ -16,8 +13,8 @@ app.get("/webhook", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode && token && mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("WEBHOOK_VERIFIED");
+  if (mode === "subscribe" && token === "rodgers4") {
+    console.log("WEBHOOK VERIFIED ✅");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
@@ -29,81 +26,63 @@ app.post("/webhook", async (req, res) => {
   const body = req.body;
 
   if (body.object === "page") {
-    body.entry.forEach(async (entry) => {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
+    for (const entry of body.entry) {
+      const webhook_event = entry.messaging[0];
+      const sender_psid = webhook_event.sender.id;
 
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const userMessage = webhookEvent.message.text;
+      if (webhook_event.message && webhook_event.message.text) {
+        const message = webhook_event.message.text.toLowerCase();
 
-        // Special command: .menu
-        if (userMessage.toLowerCase() === ".menu") {
-          const menuText = `
-╭─────────────⊷  
-┃ ʙᴏᴛ ɴᴀᴍᴇ:  𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑  
-┃ ᴘʀᴇғɪx: .
-┃ ᴍᴏᴅᴇ: AI Chat  
-┃─────────────
-┃ .menu
-┃ .help
-┃ .status
-┃ .joke
-┃ .quote
-┃ .about
-┃ .ping
-┃ .info
-┃ .owner
-┃ .support
-┃ .cmds
-┃ .love
-┃ .random
-┃ .chat
-┃ .react
-┃ .ask
-┃ .ai
-┃ .bot
-┃ .whoami
-┃ .date
-┃ .time
-╰─────────────⊷
-POWERED BY RODGERS`;
-
-          await sendMessage(senderId, menuText);
+        if (
+          message.includes("your name") ||
+          message.includes("what's your name") ||
+          message.includes("who is your owner") ||
+          message.includes("owner")
+        ) {
+          await sendMessage(
+            sender_psid,
+            "My name is 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 and my owner is 𝐒𝐈𝐑 𝐑𝐎𝐃𝐆𝐄𝐑𝐒"
+          );
         } else {
-          try {
-            const response = await axios.get(`https://kaiz-apis.gleeze.com/api/gpt-4o?ask=${encodeURIComponent(userMessage)}`);
-            const botReply = response.data.reply || "I'm having trouble responding right now.";
-
-            await sendMessage(senderId, botReply);
-          } catch (err) {
-            console.error("Error from AI:", err.message);
-            await sendMessage(senderId, "Sorry, I'm unable to reply right now.");
-          }
+          const reply = await fetchGPT4O(message);
+          await sendMessage(sender_psid, reply);
         }
       }
-    });
-
+    }
     res.status(200).send("EVENT_RECEIVED");
   } else {
     res.sendStatus(404);
   }
 });
 
-// Send message to user
-async function sendMessage(senderId, messageText) {
+// Function to send message to user
+async function sendMessage(sender_psid, response) {
   try {
     await axios.post(
-      `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       {
-        recipient: { id: senderId },
-        message: { text: messageText },
+        recipient: { id: sender_psid },
+        message: { text: response },
       }
     );
-  } catch (error) {
-    console.error("Error sending message:", error.response?.data || error.message);
+  } catch (err) {
+    console.error("Error sending message:", err.response?.data || err.message);
   }
 }
 
-app.listen(PORT, () => {
-  console.log(`✅ Server is running on port ${PORT}`);
+// Use external GPT-4o backend
+async function fetchGPT4O(prompt) {
+  try {
+    const res = await axios.get(
+      `https://kaiz-apis.gleeze.com/api/gpt-4o?ask=${encodeURIComponent(prompt)}`
+    );
+    return res.data.response || "I didn't get that.";
+  } catch (err) {
+    console.error("GPT4O Error:", err.response?.data || err.message);
+    return "Sorry, something went wrong with the AI.";
+  }
+}
+
+app.listen(3000, () => {
+  console.log("Toxic Lover server is live on port 3000 ✅");
 });
