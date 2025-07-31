@@ -1,14 +1,11 @@
 const express = require('express');
-const axios = require('axios');
 const bodyParser = require('body-parser');
+const axios = require('axios');
 const app = express();
-
-app.use(bodyParser.json());
-
+const PAGE_ACCESS_TOKEN = 'YOUR_FB_PAGE_ACCESS_TOKEN';
 const VERIFY_TOKEN = 'rodgers4';
-const PAGE_ACCESS_TOKEN = 'EAARnZBLCwD9EBPGn3bIcMgW37Nw9uBnWZAADLuh0FcwIBOF94FyZAE9z6hYP6mZCCfnp3kuAhTJTFnVhRHrcieKl2S4ZCeymyqO6BLZAeyI619sPgsJNEvcPnCvMD0jKFJ6wdcDdk2ZBqb3SS3LnCP6IP0GSykKTHj3WTYeafUUAjCXE5f61Yt1sEG1JI37f3WYZC7SQSOmMtwZDZD'; // 🔁 Replace with your real token
 
-// Convert plain text to bold Unicode
+// Bold formatter
 const BOLD = t => t.replace(/(.+?)/g, (_, w) =>
   [...w].map(c =>
     String.fromCodePoint(
@@ -22,105 +19,90 @@ const BOLD = t => t.replace(/(.+?)/g, (_, w) =>
 
 const history = new Map();
 
-// Send message to user
-const sendMessage = async (id, msg) => {
-  try {
-    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      recipient: { id },
-      message: { text: msg }
-    });
-  } catch (e) {
-    console.error('Send Error:', e?.response?.data || e.message);
-  }
-};
+app.use(bodyParser.json());
 
-// GPT-4o reply function
-async function handleGpt(id, prompt) {
-  try {
-    const res = await axios.get(`https://kaiz-apis.gleeze.com/api/gpt-4o`, {
-      params: { ask: prompt }
-    });
-
-    const text = res.data?.response || "❗ No response from GPT-4o.";
-    await sendMessage(id, `🤖 | 𝐆𝐏𝐓-𝟒𝐨\n・────────────・\n${text}\n・──── >ᴗ< ─────・`);
-  } catch (err) {
-    await sendMessage(id, `⚠️ GPT-4o Error: Failed to respond.`);
-  }
-}
-
-// DeepSeek v3 reply function
-async function handleDeepSeek(id, prompt) {
-  const convo = history.get(id) || [];
-  const ask = [...convo, { role: 'user', content: prompt }]
-    .map(m => `${m.role}: ${m.content}`).join('\n');
-
-  try {
-    const res = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
-      params: {
-        ask,
-        apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0'
-      }
-    });
-
-    const reply = BOLD(res.data?.response || "No reply.");
-    await sendMessage(id, `💬 | 𝙳𝚎𝚎𝚙𝚂𝚎𝚎𝚔 𝚟𝟹\n・────────────・\n${reply}\n・──── >ᴗ< ─────・`);
-    history.set(id, [...convo, { role: 'user', content: prompt }, { role: 'assistant', content: reply }].slice(-10));
-  } catch (err) {
-    await sendMessage(id, `⚠️ DeepSeek Error: Could not respond.`);
-  }
-}
-
-// Facebook webhook verification
+// Facebook webhook
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
-  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('Webhook Verified!');
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
   }
+  res.sendStatus(403);
 });
 
-// Message handler
+// Message sender
+const sendMessage = async (id, msg) => {
+  try {
+    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      messaging_type: "RESPONSE",
+      recipient: { id },
+      message: msg,
+    });
+  } catch (e) {
+    console.log('Send error:', e?.response?.data || e.message);
+  }
+};
+
+// Message receiver
 app.post('/webhook', async (req, res) => {
-  const body = req.body;
+  const entry = req.body.entry?.[0];
+  const messaging = entry?.messaging?.[0];
+  const senderId = messaging?.sender?.id;
+  const text = messaging?.message?.text?.trim();
 
-  if (body.object === 'page') {
-    for (const entry of body.entry) {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
+  if (!senderId || !text) return res.sendStatus(200);
 
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const msg = webhookEvent.message.text.trim();
-        if (msg.startsWith('.gpt')) {
-          const question = msg.slice(4).trim();
-          if (!question) return sendMessage(senderId, '❓ Please ask something after `.gpt`');
-          await handleGpt(senderId, question);
-        } else if (msg.startsWith('.deepseek')) {
-          const question = msg.slice(9).trim();
-          if (!question) return sendMessage(senderId, '❓ Please ask something after `.deepseek`');
-          await handleDeepSeek(senderId, question);
-        } else if (msg === '.menu') {
-          await sendMessage(senderId,
-`🔧 COMMAND LIST
-・.gpt [your question]
-・.deepseek [your question]
-・.menu - Show this help
-POWERED BY RODGERS`);
-        } else {
-          await sendMessage(senderId, `❓ Unknown command. Type .menu to see available commands.`);
-        }
-      }
+  if (text === '.menu') {
+    return sendMessage(senderId, {
+      text: `
+╭───────────⊷
+│ ⚙️ *COMMAND LIST*
+├───────────
+│ 🧠 GPT4o – Type any question
+│ 🤖 DeepSeek – Type anything else
+│ 📜 .menu – Show this menu
+╰────────────⊷
+POWERED BY RODGERS`
+    });
+  }
+
+  // Determine model
+  const useGpt = /^(who|what|when|where|how|why|tell|define|give|explain)\b/i.test(text);
+  const convo = history.get(senderId) || [];
+  const ask = [...convo, { role: 'user', content: text }]
+    .map(m => `${m.role}: ${m.content}`).join('\n');
+
+  try {
+    let responseText = '';
+    if (useGpt) {
+      // GPT4o
+      const { data } = await axios.get('https://kaiz-apis.gleeze.com/api/gpt-4o', {
+        params: { ask: text }
+      });
+      responseText = BOLD(data?.response || 'No reply from GPT.');
+    } else {
+      // DeepSeek
+      const { data } = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
+        params: { ask: ask, apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0' }
+      });
+      responseText = BOLD(data?.response || 'No reply from DeepSeek.');
     }
 
-    res.status(200).send('EVENT_RECEIVED');
-  } else {
-    res.sendStatus(404);
+    await sendMessage(senderId, {
+      text: `💬 | 𝙰𝙸 𝚁𝚎𝚜𝚙𝚘𝚗𝚜𝚎\n・────────────・\n${responseText}\n・──── >ᴗ< ─────・`
+    });
+
+    history.set(senderId, [...convo, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-10));
+  } catch (err) {
+    console.error(err.message);
+    await sendMessage(senderId, { text: '⚠️ AI Service Error. Try again later.' });
   }
+
+  res.sendStatus(200);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server is running on port ${PORT}`));
+app.listen(process.env.PORT || 3000, () => {
+  console.log('✅ Server is live');
+});
