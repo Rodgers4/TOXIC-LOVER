@@ -1,83 +1,95 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
-
+const express = require('express');
+const axios = require('axios');
+const bodyParser = require('body-parser');
 const app = express();
+
 app.use(bodyParser.json());
 
-const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
-const VERIFY_TOKEN = "rodgers4";
+const VERIFY_TOKEN = 'rodgers4';
+const PAGE_ACCESS_TOKEN = 'EAARnZBLCwD9EBPGn3bIcMgW37Nw9uBnWZAADLuh0FcwIBOF94FyZAE9z6hYP6mZCCfnp3kuAhTJTFnVhRHrcieKl2S4ZCeymyqO6BLZAeyI619sPgsJNEvcPnCvMD0jKFJ6wdcDdk2ZBqb3SS3LnCP6IP0GSykKTHj3WTYeafUUAjCXE5f61Yt1sEG1JI37f3WYZC7SQSOmMtwZDZD'; // Replace with your real token
 
-const sentWelcome = new Set(); // Tracks who has received welcome
+// Convert plain text to bold Unicode
+const BOLD = t => t.replace(/(.+?)/g, (_, w) =>
+  [...w].map(c =>
+    String.fromCodePoint(
+      /[a-z]/.test(c) ? 0x1D41A + c.charCodeAt() - 97 :
+      /[A-Z]/.test(c) ? 0x1D400 + c.charCodeAt() - 65 :
+      /[0-9]/.test(c) ? 0x1D7CE + c.charCodeAt() - 48 :
+      c.charCodeAt()
+    )
+  ).join('')
+);
 
-// DeepSeek API endpoint
-const deepSeekAPI = "https://api.deepseek.com/chat";
-const deepSeekAPIKey = "5f2fb551-c027-479e-88be-d90e5dd7d7e0";
+const history = new Map();
+
+// Send message to user
+const sendMessage = async (id, msg) => {
+  try {
+    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      recipient: { id },
+      message: { text: msg }
+    });
+  } catch (e) {
+    console.error('Send Error:', e?.response?.data || e.message);
+  }
+};
+
+// DeepSeek v3 reply function
+async function handleDeepSeek(id, prompt) {
+  const convo = history.get(id) || [];
+  const ask = [...convo, { role: 'user', content: prompt }]
+    .map(m => `${m.role}: ${m.content}`).join('\n');
+
+  try {
+    const res = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
+      params: {
+        ask,
+        apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0'
+      }
+    });
+
+    const reply = BOLD(res.data?.response || "No reply.");
+    await sendMessage(id, `💬 | 𝙳𝚎𝚎𝚙𝚂𝚎𝚎𝚔 𝚟𝟹\n・────────────・\n${reply}\n・──── >ᴗ< ─────・`);
+    history.set(id, [...convo, { role: 'user', content: prompt }, { role: 'assistant', content: reply }].slice(-10));
+  } catch (err) {
+    await sendMessage(id, `⚠️ DeepSeek Error: Could not respond.`);
+  }
+}
 
 // Facebook webhook verification
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode && token === VERIFY_TOKEN) {
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('Webhook Verified!');
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// Incoming messages
-app.post("/webhook", async (req, res) => {
+// Message handler
+app.post('/webhook', async (req, res) => {
   const body = req.body;
-  if (body.object === "page") {
+
+  if (body.object === 'page') {
     for (const entry of body.entry) {
-      for (const event of entry.messaging) {
-        const senderId = event.sender.id;
-        if (event.message && event.message.text) {
-          const userMessage = event.message.text;
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
 
-          // Send welcome message once
-          if (!sentWelcome.has(senderId)) {
-            await sendMessage(senderId, "Hello 👋, I'm Toxic Lover made by Rodgers. Just send a message to chat with me!");
-            sentWelcome.add(senderId);
-          }
-
-          try {
-            const deepseekRes = await axios.post(deepSeekAPI, {
-              messages: [{ role: "user", content: userMessage }],
-              model: "deepseek-chat"
-            }, {
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${deepSeekAPIKey}`
-              }
-            });
-
-            const reply = deepseekRes.data.choices?.[0]?.message?.content || "Hmm... I didn't get that.";
-            await sendMessage(senderId, reply);
-          } catch (error) {
-            console.error("DeepSeek error:", error.message);
-            await sendMessage(senderId, "Sorry, AI is not responding right now 😔");
-          }
-        }
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const msg = webhookEvent.message.text.trim();
+        await handleDeepSeek(senderId, msg); // 💬 Respond directly to any message
       }
     }
-    res.sendStatus(200);
+
+    res.status(200).send('EVENT_RECEIVED');
   } else {
     res.sendStatus(404);
   }
 });
 
-// Send a message via Facebook
-async function sendMessage(recipientId, text) {
-  await axios.post(
-    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: recipientId },
-      message: { text: text }
-    }
-  );
-}
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Toxic Lover is live on port " + PORT));
+app.listen(PORT, () => console.log(`✅ Server is running on port ${PORT}`));
