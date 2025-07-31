@@ -1,104 +1,126 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const axios = require("axios");
-
+const express = require('express');
+const axios = require('axios');
+const bodyParser = require('body-parser');
 const app = express();
-const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
 
 app.use(bodyParser.json());
 
-// Webhook verification
-app.get("/webhook", (req, res) => {
-  const VERIFY_TOKEN = "rodgers4";
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode && token) {
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      return res.status(200).send(challenge);
-    } else {
-      return res.sendStatus(403);
-    }
+const VERIFY_TOKEN = 'rodgers4';
+const PAGE_ACCESS_TOKEN = 'YOUR_PAGE_ACCESS_TOKEN_HERE'; // 🔁 Replace with your real token
+
+// Convert plain text to bold Unicode
+const BOLD = t => t.replace(/(.+?)/g, (_, w) =>
+  [...w].map(c =>
+    String.fromCodePoint(
+      /[a-z]/.test(c) ? 0x1D41A + c.charCodeAt() - 97 :
+      /[A-Z]/.test(c) ? 0x1D400 + c.charCodeAt() - 65 :
+      /[0-9]/.test(c) ? 0x1D7CE + c.charCodeAt() - 48 :
+      c.charCodeAt()
+    )
+  ).join('')
+);
+
+const history = new Map();
+
+// Send message to user
+const sendMessage = async (id, msg) => {
+  try {
+    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      recipient: { id },
+      message: { text: msg }
+    });
+  } catch (e) {
+    console.error('Send Error:', e?.response?.data || e.message);
+  }
+};
+
+// GPT-4o reply function
+async function handleGpt(id, prompt) {
+  try {
+    const res = await axios.get(`https://kaiz-apis.gleeze.com/api/gpt-4o`, {
+      params: { ask: prompt }
+    });
+
+    const text = res.data?.response || "❗ No response from GPT-4o.";
+    await sendMessage(id, `🤖 | 𝐆𝐏𝐓-𝟒𝐨\n・────────────・\n${text}\n・──── >ᴗ< ─────・`);
+  } catch (err) {
+    await sendMessage(id, `⚠️ GPT-4o Error: Failed to respond.`);
+  }
+}
+
+// DeepSeek v3 reply function
+async function handleDeepSeek(id, prompt) {
+  const convo = history.get(id) || [];
+  const ask = [...convo, { role: 'user', content: prompt }]
+    .map(m => `${m.role}: ${m.content}`).join('\n');
+
+  try {
+    const res = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
+      params: {
+        ask,
+        apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0'
+      }
+    });
+
+    const reply = BOLD(res.data?.response || "No reply.");
+    await sendMessage(id, `💬 | 𝙳𝚎𝚎𝚙𝚂𝚎𝚎𝚔 𝚟𝟹\n・────────────・\n${reply}\n・──── >ᴗ< ─────・`);
+    history.set(id, [...convo, { role: 'user', content: prompt }, { role: 'assistant', content: reply }].slice(-10));
+  } catch (err) {
+    await sendMessage(id, `⚠️ DeepSeek Error: Could not respond.`);
+  }
+}
+
+// Facebook webhook verification
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('Webhook Verified!');
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
   }
 });
 
 // Message handler
-app.post("/webhook", async (req, res) => {
+app.post('/webhook', async (req, res) => {
   const body = req.body;
 
-  if (body.object === "page") {
+  if (body.object === 'page') {
     for (const entry of body.entry) {
-      const webhook_event = entry.messaging[0];
-      const senderId = webhook_event.sender.id;
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
 
-      if (webhook_event.message && webhook_event.message.text) {
-        const message = webhook_event.message.text.trim().toLowerCase();
-
-        // .menu command
-        if (message === ".menu") {
-          const menuText = `
-╭───『 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐁𝐎𝐓 』───╮
-│ .menu        – Show this menu
-│ .help        – Assistance
-│ .autostatus  – Enable Auto Status
-│ .react       – Auto Emoji Reaction
-│ .viewstatus  – View WhatsApp Status
-│ .owner       – Show Bot Owner
-│ .ai          – Talk to AI
-│ .joke        – Random Joke
-│ .quote       – Daily Quote
-│ .love        – Love Message
-│ .fake        – Fake Typing
-│ .info        – User Info
-│ .chatbot     – Toggle Chat Mode
-│ .about       – Bot Details
-│ .group       – Group Tools
-│ .tools       – Extra Tools
-│ .fun         – Fun Commands
-│ .image       – Generate Image
-│ .weather     – Weather Info
-│ .news        – Latest News
-│ .date        – Current Date
-│ .time        – Current Time
-╰─────── 𝐏𝐎𝐖𝐄𝐑𝐄𝐃 𝐁𝐘 𝐑𝐎𝐃𝐆𝐄𝐑𝐒 ─────╯
-          `;
-          await sendMessage(senderId, { text: menuText });
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const msg = webhookEvent.message.text.trim();
+        if (msg.startsWith('.gpt')) {
+          const question = msg.slice(4).trim();
+          if (!question) return sendMessage(senderId, '❓ Please ask something after `.gpt`');
+          await handleGpt(senderId, question);
+        } else if (msg.startsWith('.deepseek')) {
+          const question = msg.slice(9).trim();
+          if (!question) return sendMessage(senderId, '❓ Please ask something after `.deepseek`');
+          await handleDeepSeek(senderId, question);
+        } else if (msg === '.menu') {
+          await sendMessage(senderId,
+`🔧 COMMAND LIST
+・.gpt [your question]
+・.deepseek [your question]
+・.menu - Show this help
+POWERED BY RODGERS`);
         } else {
-          // Ask GPT-4o using your API key
-          try {
-            const { data } = await axios.get("https://kaiz-apis.gleeze.com/api/gpt-4o", {
-              params: {
-                ask: message,
-                apikey: "5f2fb551-c027-479e-88be-d90e5dd7d7e0"
-              }
-            });
-
-            const botReply = data?.response || "🤖 Sorry, no response.";
-            await sendMessage(senderId, { text: botReply });
-          } catch (error) {
-            console.error("GPT-4o error:", error.message);
-            await sendMessage(senderId, { text: "⚠️ Error contacting GPT-4o." });
-          }
+          await sendMessage(senderId, `❓ Unknown command. Type .menu to see available commands.`);
         }
       }
     }
-    res.sendStatus(200);
+
+    res.status(200).send('EVENT_RECEIVED');
   } else {
     res.sendStatus(404);
   }
 });
 
-// Send message
-async function sendMessage(senderId, message) {
-  await axios.post(
-    `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-    {
-      recipient: { id: senderId },
-      message: message
-    }
-  );
-}
-
-// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Server live on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server is running on port ${PORT}`));
