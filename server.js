@@ -1,14 +1,15 @@
 const express = require('express');
 const axios = require('axios');
+const bodyParser = require('body-parser');
 const app = express();
-app.use(express.json());
 
-// Your tokens
-const PAGE_ACCESS_TOKEN = 'EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD';
+app.use(bodyParser.json());
+
 const VERIFY_TOKEN = 'rodgers4';
+const PAGE_ACCESS_TOKEN = 'EAARnZBLCwD9EBPGn3bIcMgW37Nw9uBnWZAADLuh0FcwIBOF94FyZAE9z6hYP6mZCCfnp3kuAhTJTFnVhRHrcieKl2S4ZCeymyqO6BLZAeyI619sPgsJNEvcPnCvMD0jKFJ6wdcDdk2ZBqb3SS3LnCP6IP0GSykKTHj3WTYeafUUAjCXE5f61Yt1sEG1JI37f3WYZC7SQSOmMtwZDZD'; // 🔁 Replace this with your real token
 
-// BOLD formatting
-const BOLD = t => t.replace(/\*\*(.+?)\*\*/g, (_, w) =>
+// Convert plain text to bold Unicode
+const BOLD = t => t.replace(/(.+?)/g, (_, w) =>
   [...w].map(c =>
     String.fromCodePoint(
       /[a-z]/.test(c) ? 0x1D41A + c.charCodeAt() - 97 :
@@ -19,18 +20,57 @@ const BOLD = t => t.replace(/\*\*(.+?)\*\*/g, (_, w) =>
   ).join('')
 );
 
-// Webhook verification
+const history = new Map();
+
+// Send message to user
+const sendMessage = async (id, msg) => {
+  try {
+    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      recipient: { id },
+      message: { text: msg }
+    });
+  } catch (e) {
+    console.error('Send Error:', e?.response?.data || e.message);
+  }
+};
+
+// DeepSeek v3 reply function
+async function handleDeepSeek(id, prompt) {
+  const convo = history.get(id) || [];
+  const ask = [...convo, { role: 'user', content: prompt }]
+    .map(m => `${m.role}: ${m.content}`).join('\n');
+
+  try {
+    const res = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
+      params: {
+        ask,
+        apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0'
+      }
+    });
+
+    const reply = BOLD(res.data?.response || "No reply.");
+    await sendMessage(id, `💬 | 𝙳𝚎𝚎𝚙𝚂𝚎𝚎𝚔 𝚟𝟹\n・────────────・\n${reply}\n・──── >ᴗ< ─────・`);
+    history.set(id, [...convo, { role: 'user', content: prompt }, { role: 'assistant', content: reply }].slice(-10));
+  } catch (err) {
+    await sendMessage(id, `⚠️ DeepSeek Error: Could not respond.`);
+  }
+}
+
+// Facebook webhook verification
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
-    return res.status(200).send(challenge);
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('Webhook Verified!');
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
   }
-  res.sendStatus(403);
 });
 
-// Handle messages
+// FB Message Handler
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
@@ -40,47 +80,28 @@ app.post('/webhook', async (req, res) => {
       const senderId = webhookEvent.sender.id;
 
       if (webhookEvent.message && webhookEvent.message.text) {
-        const question = webhookEvent.message.text;
-
-        if (question.toLowerCase().includes('who is your owner')) {
-          return sendMessage(senderId, { text: 'My owner is Roy 👑' });
-        }
-
-        // Ask DeepSeek
-        try {
-          const ask = `user: ${question}`;
-          const { data } = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
-            params: {
-              ask,
-              apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0
-
-      '
-            }
-          });
-
-          const res = BOLD(data?.response || 'No reply.');
-          await sendMessage(senderId, {
-            text: `💬 | 𝙳𝚎𝚎𝚙𝚂𝚎𝚎𝚔 𝚟𝟹\n・────────────・\n${res}\n・──── >ᴗ< ─────・`
-          });
-        } catch (error) {
-          await sendMessage(senderId, { text: '⚠️ DeepSeek error.' });
-        }
+        const msg = webhookEvent.message.text.trim();
+        await handleDeepSeek(senderId, msg); // Directly handle any message
       }
     }
-    res.sendStatus(200);
+
+    res.status(200).send('EVENT_RECEIVED');
   } else {
     res.sendStatus(404);
   }
 });
 
-// Send message function
-function sendMessage(senderId, response) {
-  return axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-    recipient: { id: senderId },
-    message: response
-  }).catch(err => console.error('Send Error:', err.response?.data || err.message));
-}
+// Heartbeat endpoint
+app.get('/ping', (req, res) => {
+  res.status(200).send('💓 TOXIC LOVER is still alive!');
+});
 
-// Start server
+// Self-pinging every 4 minutes (for Render or similar)
+setInterval(() => {
+  axios.get('https://https://toxic-lover-zmg6.onrender.com/ping')
+    .then(() => console.log('🔁 Self-ping success'))
+    .catch(err => console.error('Self-ping failed:', err.message));
+}, 240000); // 4 minutes
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`TOXIC LOVER is live on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server is running on port ${PORT}`));
