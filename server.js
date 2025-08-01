@@ -1,97 +1,95 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const axios = require("axios");
-
+const bodyParser = require("body-parser");
 const app = express();
+
 app.use(bodyParser.json());
 
 const VERIFY_TOKEN = "rodgers4";
-const PAGE_ACCESS_TOKEN = "EAARnZBLCwD9EBPGn3bIcMgW37Nw9uBnWZAADLuh0FcwIBOF94FyZAE9z6hYP6mZCCfnp3kuAhTJTFnVhRHrcieKl2S4ZCeymyqO6BLZAeyI619sPgsJNEvcPnCvMD0jKFJ6wdcDdk2ZBqb3SS3LnCP6IP0GSykKTHj3WTYeafUUAjCXE5f61Yt1sEG1JI37f3WYZC7SQSOmMtwZDZD";
+const PAGE_ACCESS_TOKEN = "EAAT0TVvmUIYBPFRyZAYWtZCppUrjygNmuBwglLZBhgNTtVtdkeAh0hmc0bqiQbv2kGyhSJvfpGXeWpZArydfcFy3lDOBId7VZCWkwSIMOPhilSWaJJ8JjJbETKZBjX1tVUoope98ZAhZBCSHsxsZC638DTgi2uAt6ImPS40g1Henc9jwVyvMTzPIkBK1SwgX9ljl2ChU95EZAtUAZDZD";
 const GROQ_API_KEY = "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";
 
 app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+  let mode = req.query["hub.mode"];
+  let token = req.query["hub.verify_token"];
+  let challenge = req.query["hub.challenge"];
+
+  if (mode && token) {
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("WEBHOOK_VERIFIED");
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
   }
 });
 
 app.post("/webhook", async (req, res) => {
-  const body = req.body;
+  let body = req.body;
+
   if (body.object === "page") {
-    for (const entry of body.entry) {
-      for (const event of entry.messaging) {
-        const senderId = event.sender.id;
-        const msg = event.message?.text?.trim();
+    body.entry.forEach(async (entry) => {
+      let webhook_event = entry.messaging[0];
+      let sender_psid = webhook_event.sender.id;
 
-        if (!msg) continue;
+      if (webhook_event.message && webhook_event.message.text) {
+        let userMessage = webhook_event.message.text;
 
-        // Handle ".menu" command
-        if (msg.toLowerCase() === ".menu") {
-          const menu = `
-╭─❍ 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 ⊷  
-│  
-├ 📍 Smart AI powered by Groq  
-├ 💬 Just type anything to get a reply  
-│  
-╰─❍ POWERED BY RODGERS  
-`;
-          await sendMessage(senderId, menu);
-          continue;
+        if (userMessage.toLowerCase() === ".menu") {
+          const response = `
+╭───────────⊷
+│ 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒 🖤
+├────────────────────────
+│ 💬 Chat with AI (just message)
+│ 🔍 Auto replies
+│ 🧠 Smart responses
+│ 📌 No commands needed!
+╰──────────────⊷
+POWERED BY RODGERS
+          `;
+          return sendMessage(sender_psid, response);
         }
 
-        // Send to Groq AI
         try {
           const groqRes = await axios.post(
             "https://api.groq.com/openai/v1/chat/completions",
             {
               model: "mixtral-8x7b-32768",
-              messages: [
-                { role: "system", content: "You are Toxic Lover, a helpful and sweet Facebook bot created by Rodgers." },
-                { role: "user", content: msg },
-              ],
+              messages: [{ role: "user", content: userMessage }],
             },
             {
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${GROQ_API_KEY}`,
+                Authorization: `Bearer ${GROQ_API_KEY}`,
               },
             }
           );
 
-          const reply = groqRes.data.choices[0].message.content;
-          await sendMessage(senderId, reply);
-        } catch (error) {
-          console.error("Groq Error:", error?.response?.data || error.message);
-          await sendMessage(senderId, "😓 TOXIC LOVER is not responding right now. Please try again shortly.");
+          const botReply = groqRes.data.choices[0].message.content;
+          await sendMessage(sender_psid, botReply);
+        } catch (err) {
+          console.error("❌ AI Error:", err.response?.data || err.message);
+          await sendMessage(sender_psid, "😭 𝐓𝐎𝐗𝐈𝐂 𝐋𝐎𝐕𝐄𝐑 is not responding right now. Please try again later.");
         }
       }
-    }
-    res.sendStatus(200);
+    });
+
+    res.status(200).send("EVENT_RECEIVED");
   } else {
     res.sendStatus(404);
   }
 });
 
-async function sendMessage(recipientId, text) {
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
-      {
-        recipient: { id: recipientId },
-        message: { text },
-      }
-    );
-  } catch (err) {
-    console.error("Send Message Error:", err?.response?.data || err.message);
-  }
+async function sendMessage(sender_psid, response) {
+  await axios.post(
+    `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+    {
+      recipient: { id: sender_psid },
+      message: { text: response },
+    }
+  );
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Toxic Lover server running on port ${PORT}`);
+app.listen(3000, () => {
+  console.log("🚀 Server is live at http://localhost:3000");
 });
