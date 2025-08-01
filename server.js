@@ -52,7 +52,9 @@ app.post('/webhook', async (req, res) => {
           const { data } = await axios.get('https://kaiz-apis.gleeze.com/api/deepseek-v3', {
             params: {
               ask,
-              apikey: '0bc1e20e-ec47-4c92-a61f-1c626e7edab7'
+              apikey: '5f2fb551-c027-479e-88be-d90e5dd7d7e0
+
+      '
             }
           });
 
