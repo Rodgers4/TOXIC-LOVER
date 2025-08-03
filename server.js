@@ -1,23 +1,13 @@
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-const PAGE_ACCESS_TOKEN = 'EAARnZBLCwD9EBPGn3bIcMgW37Nw9uBnWZAADLuh0FcwIBOF94FyZAE9z6hYP6mZCCfnp3kuAhTJTFnVhRHrcieKl2S4ZCeymyqO6BLZAeyI619sPgsJNEvcPnCvMD0jKFJ6wdcDdk2ZBqb3SS3LnCP6IP0GSykKTHj3WTYeafUUAjCXE5f61Yt1sEG1JI37f3WYZC7SQSOmMtwZDZD';
-const VERIFY_TOKEN = 'rodgers4';
-const AKASH_API_KEY = 'sk-yztNURhgB5u0u6alq4zxHQ';
-
 app.use(bodyParser.json());
 
 // 🌐 Webhook verification
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode && token === VERIFY_TOKEN) {
+  const 
     console.log('✅ Webhook verified');
     res.status(200).send(challenge);
   } else {
@@ -30,11 +20,9 @@ app.post('/webhook', async (req, res) => {
   const body = req.body;
 
   if (body.object === 'page') {
-    for (const entry of body.entry) {
+    for (const entry 
       const event = entry.messaging[0];
-      const sender = event.sender.id;
-
-      if (event.message && event.message.text) {
+      const se
         const userMessage = event.message.text;
 
         // AkashChat API call
